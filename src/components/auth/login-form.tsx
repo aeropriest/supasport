@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -57,16 +57,16 @@ export function LoginForm() {
 
   const currentSchema = formType === 'login' ? loginSchema : signUpSchema;
 
-  const form = useForm<z.infer<typeof loginSchema> | z.infer<typeof signUpSchema>>({
+  const form = useForm<z.infer<typeof signUpSchema>>({
     resolver: zodResolver(currentSchema),
     defaultValues: {
+      name: "",
       email: "",
       password: "",
-      ...(formType === 'signup' ? { name: "" } : {}),
     },
   });
 
-  useState(() => {
+  useEffect(() => {
     form.reset();
   }, [formType]);
 
@@ -281,7 +281,7 @@ export function LoginForm() {
                         <FormItem>
                         <FormLabel>Name</FormLabel>
                         <FormControl>
-                            <Input placeholder="e.g., Jane Doe" {...field as any} />
+                            <Input placeholder="e.g., Jane Doe" {...field} />
                         </FormControl>
                         <FormMessage />
                         </FormItem>
@@ -297,7 +297,7 @@ export function LoginForm() {
                   <FormControl>
                     <Input
                       placeholder="e.g., coach@email.com"
-                      {...field as any}
+                      {...field}
                     />
                   </FormControl>
                   <FormMessage />
@@ -311,7 +311,7 @@ export function LoginForm() {
                 <FormItem>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="••••••••" {...field as any} />
+                    <Input type="password" placeholder="••••••••" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

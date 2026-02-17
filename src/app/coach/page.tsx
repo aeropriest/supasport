@@ -64,6 +64,15 @@ export default function CoachDashboard() {
     }
   };
 
+  const toggleClient = (clientId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      clientIds: prev.clientIds.includes(clientId)
+        ? prev.clientIds.filter((id) => id !== clientId)
+        : [...prev.clientIds, clientId],
+    }));
+  };
+
   // Calendar logic
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -392,24 +401,22 @@ export default function CoachDashboard() {
             <div className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Client(s) *</label>
-                <select
-                  multiple
-                  value={form.clientIds}
-                  onChange={(e) => {
-                    const selectedIds = Array.from(e.target.selectedOptions, (option) => option.value);
-                    setForm({ ...form, clientIds: selectedIds });
-                  }}
-                  className="h-40 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                >
+                <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-300 p-2">
                   {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
+                    <label key={c.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.clientIds.includes(c.id)}
+                        onChange={() => toggleClient(c.id)}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-gray-700">{c.name}</span>
+                    </label>
                   ))}
-                </select>
-                 <p className="mt-1 text-xs text-gray-400">
-                  Hold Ctrl (or Cmd on Mac) to select multiple clients.
-                </p>
+                  {clients.length === 0 && (
+                    <p className="px-2 py-1 text-sm text-gray-400">No clients available</p>
+                  )}
+                </div>
               </div>
 
               <div>

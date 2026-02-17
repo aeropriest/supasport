@@ -5,8 +5,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import {
+  createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  updateProfile,
   User as FirebaseUser,
 } from "firebase/auth";
 import { useRouter } from "next/navigation";
@@ -35,24 +37,43 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import type { User } from "@/lib/types";
 import { Chrome, Loader2 } from "lucide-react";
 
-const formSchema = z.object({
-  email: z.string().min(1, { message: "Email or Phone Number is required." }),
+const loginSchema = z.object({
+  email: z.string().min(1, { message: "Email is required." }),
   password: z.string().min(6, { message: "Password is required." }),
 });
 
+const signUpSchema = z.object({
+  name: z.string().min(1, { message: "Name is required." }),
+  email: z.string().email({ message: "Invalid email address." }),
+  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+});
+
 export function LoginForm() {
+  const [formType, setFormType] = useState<'login' | 'signup'>('login');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const currentSchema = formType === 'login' ? loginSchema : signUpSchema;
+
+  const form = useForm<z.infer<typeof loginSchema> | z.infer<typeof signUpSchema>>({
+    resolver: zodResolver(currentSchema),
     defaultValues: {
       email: "",
       password: "",
+      ...(formType === 'signup' ? { name: "" } : {}),
     },
   });
+
+  useState(() => {
+    form.reset();
+  }, [formType]);
+
+  const toggleFormType = () => {
+    setFormType(prev => (prev === 'login' ? 'signup' : 'login'));
+  };
+
 
   const handleAuthSuccess = async (firebaseUser: FirebaseUser) => {
     const userDocRef = doc(db, "users", firebaseUser.uid);
@@ -84,59 +105,13 @@ export function LoginForm() {
     }
   };
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
+  async function onLoginSubmit(values: z.infer<typeof loginSchema>) {
     setLoading(true);
-    const { email, password } = values;
-
-    // Hardcoded admin check
-    if (
-      (email === "+6598503941" || email === "admin@supasport.com") &&
-      password === "Pavel@SuapSport"
-    ) {
-      try {
-        const userCredential = await signInWithEmailAndPassword(
-          auth,
-          "admin@supasport.com",
-          password
-        );
-        await handleAuthSuccess(userCredential.user);
-      } catch (error: any) {
-        if (error.code === "auth/user-not-found") {
-          // If admin account does not exist, this is likely a first-time setup.
-          // We can't create it here securely. This is a manual process.
-          // For this app, we'll show an error.
-           toast({
-            variant: "destructive",
-            title: "Admin Login Error",
-            description: "Admin account not configured. Please contact support.",
-          });
-        } else if (error.code === 'auth/wrong-password') {
-             toast({
-                variant: "destructive",
-                title: "Invalid Credentials",
-                description: "Please check your password and try again.",
-            });
-        }
-        else {
-          console.error("Admin login error:", error);
-          toast({
-            variant: "destructive",
-            title: "Login Failed",
-            description: "An unexpected error occurred.",
-          });
-        }
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-
-    // Coach login
     try {
       const userCredential = await signInWithEmailAndPassword(
         auth,
-        email,
-        password
+        values.email,
+        values.password
       );
       await handleAuthSuccess(userCredential.user);
     } catch (error: any) {
@@ -155,6 +130,52 @@ export function LoginForm() {
     }
   }
 
+  async function onSignUpSubmit(values: z.infer<typeof signUpSchema>) {
+    setLoading(true);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
+      const user = userCredential.user;
+      
+      await updateProfile(user, { displayName: values.name });
+
+      const newUser: User = {
+        uid: user.uid,
+        email: user.email,
+        name: values.name,
+        role: "coach",
+        photoURL: user.photoURL,
+      };
+      await setDoc(doc(db, "users", user.uid), newUser);
+      
+      toast({
+          title: "Account Created",
+          description: "You have successfully signed up.",
+      });
+
+      await handleAuthSuccess(user);
+
+    } catch (error: any) {
+        toast({
+            variant: "destructive",
+            title: "Sign Up Failed",
+            description: error.code === 'auth/email-already-in-use'
+                ? "This email is already registered."
+                : "An unexpected error occurred. Please try again.",
+        });
+    } finally {
+        setLoading(false);
+    }
+  }
+  
+  const onSubmit = form.handleSubmit((data) => {
+    if (formType === 'login') {
+      onLoginSubmit(data as z.infer<typeof loginSchema>);
+    } else {
+      onSignUpSubmit(data as z.infer<typeof signUpSchema>);
+    }
+  });
+
+
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     try {
@@ -164,7 +185,7 @@ export function LoginForm() {
       const userDoc = await getDoc(userDocRef);
 
       if (!userDoc.exists()) {
-        const newUser: Omit<User, 'id'> = {
+        const newUser: User = {
           uid: user.uid,
           email: user.email,
           name: user.displayName,
@@ -186,9 +207,47 @@ export function LoginForm() {
     }
   };
 
+  const handleAdminLogin = async () => {
+    setLoading(true);
+    try {
+        const userCredential = await signInWithEmailAndPassword(auth, "admin@supasport.com", "Pavel@SuapSport");
+        await handleAuthSuccess(userCredential.user);
+    } catch (error: any) {
+        if (error.code === 'auth/user-not-found') {
+            toast({
+                variant: "destructive",
+                title: "Admin Login Error",
+                description: "Admin account not configured. Please contact support.",
+            });
+        } else if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+            toast({
+                variant: "destructive",
+                title: "Invalid Credentials",
+                description: "The admin password was incorrect.",
+            });
+        } else {
+            console.error("Admin login error:", error);
+            toast({
+                variant: "destructive",
+                title: "Login Failed",
+                description: "An unexpected error occurred during admin login.",
+            });
+        }
+    } finally {
+        setLoading(false);
+    }
+  };
+
   return (
     <Card>
-      <CardHeader className="text-center">
+       <div className="relative">
+        <div className="absolute top-4 right-4">
+            <Button variant="link" onClick={handleAdminLogin} disabled={loading || googleLoading}>
+                Continue as Admin
+            </Button>
+        </div>
+      </div>
+      <CardHeader className="text-center pt-12">
         <div className="mx-auto mb-4">
         <svg
             width="48"
@@ -204,24 +263,41 @@ export function LoginForm() {
             />
           </svg>
         </div>
-        <CardTitle className="text-3xl font-bold">SupaSport Hub</CardTitle>
+        <CardTitle className="text-3xl font-bold">
+            {formType === 'login' ? 'SupaSport Hub' : 'Create an Account'}
+        </CardTitle>
         <CardDescription>
-          Welcome back! Please enter your details to login.
+          {formType === 'login' ? 'Welcome back! Please enter your details to login.' : 'Enter your details to create an account.'}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={onSubmit} className="space-y-4">
+            {formType === 'signup' && (
+                <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>Name</FormLabel>
+                        <FormControl>
+                            <Input placeholder="e.g., Jane Doe" {...field as any} />
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
+            )}
             <FormField
               control={form.control}
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email or Phone</FormLabel>
+                  <FormLabel>Email</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="e.g., coach@email.com or +6598503941"
-                      {...field}
+                      placeholder="e.g., coach@email.com"
+                      {...field as any}
                     />
                   </FormControl>
                   <FormMessage />
@@ -235,16 +311,33 @@ export function LoginForm() {
                 <FormItem>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="••••••••" {...field} />
+                    <Input type="password" placeholder="••••••••" {...field as any} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full !mt-6" disabled={loading || googleLoading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sign In
+              {formType === 'login' ? 'Sign In' : 'Sign Up'}
             </Button>
+            <div className="text-center text-sm text-muted-foreground">
+              {formType === 'login' ? (
+                  <>
+                  Don't have an account?{" "}
+                  <button type="button" onClick={toggleFormType} className="font-semibold text-primary hover:underline">
+                      Sign up
+                  </button>
+                  </>
+              ) : (
+                  <>
+                  Already have an account?{" "}
+                  <button type="button" onClick={toggleFormType} className="font-semibold text-primary hover:underline">
+                      Sign in
+                  </button>
+                  </>
+              )}
+            </div>
           </form>
         </Form>
       </CardContent>
@@ -263,7 +356,7 @@ export function LoginForm() {
           variant="outline"
           className="w-full"
           onClick={handleGoogleSignIn}
-          disabled={googleLoading}
+          disabled={googleLoading || loading}
         >
           {googleLoading ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

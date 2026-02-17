@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      // Admins can be identified by a custom claim or by checking a document in Firestore.
+      // For this app, we check a 'role' field in the user's document.
+      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /users/{userId} {
+      // A user can create their own user document if they are signed in
+      // and the document ID matches their user ID.
+      allow create: if request.auth != null && request.auth.uid == userId;
+      // A user can read and update their own profile
+      allow read, update: if isOwner(userId);
+      // Only admins can see the full list of users
+      allow list: if isAdmin();
+    }
+
+    match /clients/{clientId} {
+      // Coaches can create clients. The client data must contain the coach's UID.
+      allow create: if request.auth != null && request.resource.data.addedBy == request.auth.uid;
+      // Coaches can read, update, and delete their own clients.
+      allow read, update, delete: if request.auth != null && resource.data.addedBy == request.auth.uid;
+      // Admins can view all clients
+      allow list, get: if isAdmin();
+    }
+
+    match /lessons/{lessonId} {
+      // Coaches can create lessons for themselves.
+      allow create: if request.auth != null && request.resource.data.coachId == request.auth.uid;
+      // Coaches can read, update, and delete their own lessons.
+      allow read, update, delete: if request.auth != null && resource.data.coachId == request.auth.uid;
+      // Admins can view all lessons
+      allow list, get: if isAdmin();
+    }
+  }
+}

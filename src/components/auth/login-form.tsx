@@ -10,6 +10,7 @@ import {
   signInWithPopup,
   updateProfile,
   User as FirebaseUser,
+  GoogleAuthProvider,
 } from "firebase/auth";
 import { useRouter } from "next/navigation";
 
@@ -24,7 +25,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { auth, googleProvider, db } from "@/lib/firebase";
 import {
   Card,
   CardContent,
@@ -36,6 +36,9 @@ import {
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import type { User } from "@/lib/types";
 import { Chrome, Loader2 } from "lucide-react";
+import { useAuth, useFirestore } from "@/firebase";
+import { FirestorePermissionError } from "@/firebase/errors";
+import { errorEmitter } from "@/firebase/error-emitter";
 
 const loginSchema = z.object({
   email: z.string().min(1, { message: "Email is required." }),
@@ -54,6 +57,9 @@ export function LoginForm() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
+  const auth = useAuth();
+  const db = useFirestore();
+  const googleProvider = new GoogleAuthProvider();
 
   const currentSchema = formType === 'login' ? loginSchema : signUpSchema;
 
@@ -68,7 +74,7 @@ export function LoginForm() {
 
   useEffect(() => {
     form.reset();
-  }, [formType]);
+  }, [formType, form]);
 
   const toggleFormType = () => {
     setFormType(prev => (prev === 'login' ? 'signup' : 'login'));
@@ -76,6 +82,7 @@ export function LoginForm() {
 
 
   const handleAuthSuccess = async (firebaseUser: FirebaseUser) => {
+    if (!db) return;
     const userDocRef = doc(db, "users", firebaseUser.uid);
     const userDoc = await getDoc(userDocRef);
     let userRole: "admin" | "coach" = "coach";
@@ -85,15 +92,22 @@ export function LoginForm() {
     }
 
     if (
-      (firebaseUser.email === "+6598503941" ||
-        firebaseUser.email === "admin@supasport.com")
+      (firebaseUser.email === "admin@supasport.com")
     ) {
       if (!userDoc.exists() || userDoc.data().role !== "admin") {
-        await setDoc(
+        const adminData = { role: "admin", email: firebaseUser.email, uid: firebaseUser.uid, name: firebaseUser.displayName };
+        setDoc(
           userDocRef,
-          { role: "admin" },
+          adminData,
           { merge: true }
-        );
+        ).catch(err => {
+          const permissionError = new FirestorePermissionError({
+            path: userDocRef.path,
+            operation: 'update',
+            requestResourceData: adminData
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        });
       }
       userRole = "admin";
     }
@@ -107,6 +121,7 @@ export function LoginForm() {
 
   async function onLoginSubmit(values: z.infer<typeof loginSchema>) {
     setLoading(true);
+    if (!auth) return;
     try {
       const userCredential = await signInWithEmailAndPassword(
         auth,
@@ -132,6 +147,8 @@ export function LoginForm() {
 
   async function onSignUpSubmit(values: z.infer<typeof signUpSchema>) {
     setLoading(true);
+    if (!auth || !db) return;
+
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
       const user = userCredential.user;
@@ -145,14 +162,29 @@ export function LoginForm() {
         role: "coach",
         photoURL: user.photoURL,
       };
-      await setDoc(doc(db, "users", user.uid), newUser);
+      const userDocRef = doc(db, "users", user.uid);
       
-      toast({
-          title: "Account Created",
-          description: "You have successfully signed up.",
-      });
-
-      await handleAuthSuccess(user);
+      setDoc(userDocRef, newUser)
+        .then(() => {
+          toast({
+              title: "Account Created",
+              description: "You have successfully signed up.",
+          });
+          handleAuthSuccess(user);
+        })
+        .catch(serverError => {
+            toast({
+              variant: "destructive",
+              title: "Sign Up Error",
+              description: "Failed to create user profile. Please check permissions."
+            });
+            const permissionError = new FirestorePermissionError({
+                path: userDocRef.path,
+                operation: 'create',
+                requestResourceData: newUser
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        });
 
     } catch (error: any) {
         toast({
@@ -178,6 +210,7 @@ export function LoginForm() {
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
+    if (!auth || !db) return;
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
@@ -192,7 +225,14 @@ export function LoginForm() {
           role: "coach",
           photoURL: user.photoURL,
         };
-        await setDoc(userDocRef, newUser);
+        setDoc(userDocRef, newUser).catch(err => {
+            const permissionError = new FirestorePermissionError({
+                path: userDocRef.path,
+                operation: 'create',
+                requestResourceData: newUser
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        });
       }
       await handleAuthSuccess(user);
     } catch (error) {
@@ -209,16 +249,23 @@ export function LoginForm() {
 
   const handleAdminLogin = async () => {
     setLoading(true);
+    if (!auth) return;
     try {
         const userCredential = await signInWithEmailAndPassword(auth, "admin@supasport.com", "Pavel@SuapSport");
         await handleAuthSuccess(userCredential.user);
     } catch (error: any) {
         if (error.code === 'auth/user-not-found') {
-            toast({
-                variant: "destructive",
-                title: "Admin Login Error",
-                description: "Admin account not configured. Please contact support.",
-            });
+            // Let's try to create the admin user if it doesn't exist.
+            try {
+              const adminCredential = await createUserWithEmailAndPassword(auth, "admin@supasport.com", "Pavel@SuapSport");
+              await handleAuthSuccess(adminCredential.user);
+            } catch (createError: any) {
+              toast({
+                  variant: "destructive",
+                  title: "Admin Login Error",
+                  description: "Admin account setup failed. Please contact support.",
+              });
+            }
         } else if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
             toast({
                 variant: "destructive",

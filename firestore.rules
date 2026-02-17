@@ -2,37 +2,44 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
+    // Helper function to check if user is admin
     function isAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return request.auth != null && request.auth.token.email == 'admin@supasport.com';
     }
-
-    match /users/{userId} {
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow read: if isSignedIn();
-      allow update: if isOwner(userId) || isAdmin();
-      allow delete: if isAdmin();
-      allow list: if isSignedIn();
+    
+    // Helper function to check if user is a coach
+    function isCoach() {
+      return request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
     }
-
+    
+    // Coaches collection
+    match /coaches/{coachId} {
+      allow read: if isAdmin() || (request.auth != null && request.auth.uid == coachId);
+      allow write: if isAdmin();
+    }
+    
+    // Clients collection
     match /clients/{clientId} {
-      allow create: if isSignedIn();
-      allow read, list: if isSignedIn();
-      allow update, delete: if isSignedIn();
+      // Coaches need to list all clients to book lessons.
+      // The previous rule failed on this 'list' operation. This rule allows any authenticated user
+      // to read the client list. This is a temporary, insecure solution to unblock the functionality.
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
     }
-
+    
+    // Packages collection
+    match /packages/{packageId} {
+      // The coach dashboard also fetches all packages, so this rule is updated similarly to clients.
+      allow read: if request.auth != null;
+      allow write: if isAdmin() || isCoach();
+    }
+    
+    // Lessons collection
     match /lessons/{lessonId} {
-      allow create: if isSignedIn();
-      allow read, list: if isSignedIn();
-      allow update, delete: if isSignedIn();
+      // Ensures coaches can only access their own lessons.
+      allow read, update: if isAdmin() || (isCoach() && resource.data.coachId == request.auth.uid);
+      allow create: if isAdmin() || (isCoach() && request.resource.data.coachId == request.auth.uid);
+      allow delete: if isAdmin();
     }
   }
 }

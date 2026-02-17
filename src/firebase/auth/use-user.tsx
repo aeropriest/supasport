@@ -66,7 +66,7 @@ export function useUser(): UseUser {
     return () => unsubscribeAuth();
   }, [auth, db, pathname, router]);
   
-  const isSupaSportAdmin = user?.role === 'admin' && (user?.email === '+6598503941' || user?.email === 'admin@supasport.com');
+  const isSupaSportAdmin = user?.role === 'admin';
 
   return { user, firebaseUser, loading, isSupaSportAdmin };
 }

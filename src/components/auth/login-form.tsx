@@ -35,10 +35,11 @@ import {
 } from "@/components/ui/card";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import type { User } from "@/lib/types";
-import { Chrome, Loader2 } from "lucide-react";
+import { Chrome, Loader2, Trophy } from "lucide-react";
 import { useAuth, useFirestore } from "@/firebase";
-import { FirestorePermissionError } from "@/firebase/errors";
-import { errorEmitter } from "@/firebase/error-emitter";
+
+const ADMIN_EMAIL = "admin@supasport.com";
+const ADMIN_PASSWORD = "Pavel@SuapSport";
 
 const loginSchema = z.object({
   email: z.string().min(1, { message: "Email is required." }),
@@ -52,7 +53,7 @@ const signUpSchema = z.object({
 });
 
 export function LoginForm() {
-  const [formType, setFormType] = useState<'login' | 'signup'>('login');
+  const [formType, setFormType] = useState<"login" | "signup">("login");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
@@ -61,7 +62,7 @@ export function LoginForm() {
   const db = useFirestore();
   const googleProvider = new GoogleAuthProvider();
 
-  const currentSchema = formType === 'login' ? loginSchema : signUpSchema;
+  const currentSchema = formType === "login" ? loginSchema : signUpSchema;
 
   const form = useForm<z.infer<typeof signUpSchema>>({
     resolver: zodResolver(currentSchema),
@@ -77,42 +78,35 @@ export function LoginForm() {
   }, [formType, form]);
 
   const toggleFormType = () => {
-    setFormType(prev => (prev === 'login' ? 'signup' : 'login'));
+    setFormType((prev) => (prev === "login" ? "signup" : "login"));
   };
 
-
-  const handleAuthSuccess = async (firebaseUser: FirebaseUser) => {
-    if (!db) return;
+  const ensureUserDoc = async (
+    firebaseUser: FirebaseUser,
+    role: "admin" | "coach" = "coach",
+    displayName?: string
+  ) => {
+    if (!db) return role;
     const userDocRef = doc(db, "users", firebaseUser.uid);
     const userDoc = await getDoc(userDocRef);
-    let userRole: "admin" | "coach" = "coach";
 
     if (userDoc.exists()) {
-      userRole = userDoc.data().role;
+      return userDoc.data().role as "admin" | "coach";
     }
 
-    if (
-      (firebaseUser.email === "admin@supasport.com")
-    ) {
-      if (!userDoc.exists() || userDoc.data().role !== "admin") {
-        const adminData = { role: "admin", email: firebaseUser.email, uid: firebaseUser.uid, name: firebaseUser.displayName };
-        setDoc(
-          userDocRef,
-          adminData,
-          { merge: true }
-        ).catch(err => {
-          const permissionError = new FirestorePermissionError({
-            path: userDocRef.path,
-            operation: 'update',
-            requestResourceData: adminData
-          });
-          errorEmitter.emit('permission-error', permissionError);
-        });
-      }
-      userRole = "admin";
-    }
+    const newUser: User = {
+      uid: firebaseUser.uid,
+      email: firebaseUser.email,
+      name: displayName || firebaseUser.displayName || "User",
+      role,
+      photoURL: firebaseUser.photoURL,
+    };
+    await setDoc(userDocRef, newUser);
+    return role;
+  };
 
-    if (userRole === "admin") {
+  const redirectByRole = (role: "admin" | "coach") => {
+    if (role === "admin") {
       router.push("/admin/dashboard");
     } else {
       router.push("/coach/dashboard");
@@ -121,14 +115,11 @@ export function LoginForm() {
 
   async function onLoginSubmit(values: z.infer<typeof loginSchema>) {
     setLoading(true);
-    if (!auth) return;
+    if (!auth || !db) return;
     try {
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        values.email,
-        values.password
-      );
-      await handleAuthSuccess(userCredential.user);
+      const cred = await signInWithEmailAndPassword(auth, values.email, values.password);
+      const role = await ensureUserDoc(cred.user);
+      redirectByRole(role);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -150,91 +141,41 @@ export function LoginForm() {
     if (!auth || !db) return;
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
-      const user = userCredential.user;
-      
-      await updateProfile(user, { displayName: values.name });
+      const cred = await createUserWithEmailAndPassword(auth, values.email, values.password);
+      await updateProfile(cred.user, { displayName: values.name });
 
-      const newUser: User = {
-        uid: user.uid,
-        email: user.email,
-        name: values.name,
-        role: "coach",
-        photoURL: user.photoURL,
-      };
-      const userDocRef = doc(db, "users", user.uid);
-      
-      setDoc(userDocRef, newUser)
-        .then(() => {
-          toast({
-              title: "Account Created",
-              description: "You have successfully signed up.",
-          });
-          handleAuthSuccess(user);
-        })
-        .catch(serverError => {
-            toast({
-              variant: "destructive",
-              title: "Sign Up Error",
-              description: "Failed to create user profile. Please check permissions."
-            });
-            const permissionError = new FirestorePermissionError({
-                path: userDocRef.path,
-                operation: 'create',
-                requestResourceData: newUser
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        });
-
+      await ensureUserDoc(cred.user, "coach", values.name);
+      toast({ title: "Account Created", description: "Welcome to SupaSport!" });
+      redirectByRole("coach");
     } catch (error: any) {
-        toast({
-            variant: "destructive",
-            title: "Sign Up Failed",
-            description: error.code === 'auth/email-already-in-use'
-                ? "This email is already registered."
-                : "An unexpected error occurred. Please try again.",
-        });
+      toast({
+        variant: "destructive",
+        title: "Sign Up Failed",
+        description:
+          error.code === "auth/email-already-in-use"
+            ? "This email is already registered."
+            : "An unexpected error occurred. Please try again.",
+      });
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   }
-  
+
   const onSubmit = form.handleSubmit((data) => {
-    if (formType === 'login') {
+    if (formType === "login") {
       onLoginSubmit(data as z.infer<typeof loginSchema>);
     } else {
       onSignUpSubmit(data as z.infer<typeof signUpSchema>);
     }
   });
 
-
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     if (!auth || !db) return;
     try {
       const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
-      const userDocRef = doc(db, "users", user.uid);
-      const userDoc = await getDoc(userDocRef);
-
-      if (!userDoc.exists()) {
-        const newUser: User = {
-          uid: user.uid,
-          email: user.email,
-          name: user.displayName,
-          role: "coach",
-          photoURL: user.photoURL,
-        };
-        setDoc(userDocRef, newUser).catch(err => {
-            const permissionError = new FirestorePermissionError({
-                path: userDocRef.path,
-                operation: 'create',
-                requestResourceData: newUser
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        });
-      }
-      await handleAuthSuccess(user);
+      const role = await ensureUserDoc(result.user);
+      redirectByRole(role);
     } catch (error) {
       console.error(error);
       toast({
@@ -249,91 +190,92 @@ export function LoginForm() {
 
   const handleAdminLogin = async () => {
     setLoading(true);
-    if (!auth) return;
+    if (!auth || !db) return;
     try {
-        const userCredential = await signInWithEmailAndPassword(auth, "admin@supasport.com", "Pavel@SuapSport");
-        await handleAuthSuccess(userCredential.user);
-    } catch (error: any) {
-        if (error.code === 'auth/user-not-found') {
-            // Let's try to create the admin user if it doesn't exist.
-            try {
-              const adminCredential = await createUserWithEmailAndPassword(auth, "admin@supasport.com", "Pavel@SuapSport");
-              await handleAuthSuccess(adminCredential.user);
-            } catch (createError: any) {
-              toast({
-                  variant: "destructive",
-                  title: "Admin Login Error",
-                  description: "Admin account setup failed. Please contact support.",
-              });
-            }
-        } else if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-            toast({
-                variant: "destructive",
-                title: "Invalid Credentials",
-                description: "The admin password was incorrect.",
-            });
+      let cred;
+      try {
+        cred = await signInWithEmailAndPassword(auth, ADMIN_EMAIL, ADMIN_PASSWORD);
+      } catch (error: any) {
+        if (error.code === "auth/user-not-found" || error.code === "auth/invalid-credential") {
+          cred = await createUserWithEmailAndPassword(auth, ADMIN_EMAIL, ADMIN_PASSWORD);
         } else {
-            console.error("Admin login error:", error);
-            toast({
-                variant: "destructive",
-                title: "Login Failed",
-                description: "An unexpected error occurred during admin login.",
-            });
+          throw error;
         }
+      }
+
+      const userDocRef = doc(db, "users", cred.user.uid);
+      const userDoc = await getDoc(userDocRef);
+      if (!userDoc.exists() || userDoc.data().role !== "admin") {
+        await setDoc(
+          userDocRef,
+          {
+            uid: cred.user.uid,
+            email: ADMIN_EMAIL,
+            name: "Pavel (Admin)",
+            role: "admin",
+            photoURL: null,
+          } as User,
+          { merge: true }
+        );
+      }
+      redirectByRole("admin");
+    } catch (error: any) {
+      console.error("Admin login error:", error);
+      toast({
+        variant: "destructive",
+        title: "Admin Login Failed",
+        description: "Could not log in as admin. Please try again.",
+      });
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
   return (
-    <Card>
-       <div className="relative">
+    <Card className="shadow-xl border-0">
+      <div className="relative">
         <div className="absolute top-4 right-4">
-            <Button variant="link" onClick={handleAdminLogin} disabled={loading || googleLoading}>
-                Continue as Admin
-            </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleAdminLogin}
+            disabled={loading || googleLoading}
+            className="text-xs text-muted-foreground"
+          >
+            Admin Login
+          </Button>
         </div>
       </div>
-      <CardHeader className="text-center pt-12">
-        <div className="mx-auto mb-4">
-        <svg
-            width="48"
-            height="48"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="text-primary"
-          >
-            <path
-              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-12h2v2h-2v-2zm0 4h2v6h-2v-6z"
-              fill="currentColor"
-            />
-          </svg>
+      <CardHeader className="text-center pt-10">
+        <div className="mx-auto mb-3 h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center">
+          <Trophy className="h-7 w-7 text-primary" />
         </div>
-        <CardTitle className="text-3xl font-bold">
-            {formType === 'login' ? 'SupaSport Hub' : 'Create an Account'}
+        <CardTitle className="text-2xl font-bold">
+          {formType === "login" ? "SupaSport" : "Create Account"}
         </CardTitle>
         <CardDescription>
-          {formType === 'login' ? 'Welcome back! Please enter your details to login.' : 'Enter your details to create an account.'}
+          {formType === "login"
+            ? "Welcome back! Sign in to manage your lessons."
+            : "Sign up as a coach to get started."}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
           <form onSubmit={onSubmit} className="space-y-4">
-            {formType === 'signup' && (
-                <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                        <FormItem>
-                        <FormLabel>Name</FormLabel>
-                        <FormControl>
-                            <Input placeholder="e.g., Jane Doe" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                        </FormItem>
-                    )}
-                />
+            {formType === "signup" && (
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Full Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Jane Doe" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             )}
             <FormField
               control={form.control}
@@ -342,10 +284,7 @@ export function LoginForm() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="e.g., coach@email.com"
-                      {...field}
-                    />
+                    <Input placeholder="coach@email.com" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -366,23 +305,31 @@ export function LoginForm() {
             />
             <Button type="submit" className="w-full !mt-6" disabled={loading || googleLoading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {formType === 'login' ? 'Sign In' : 'Sign Up'}
+              {formType === "login" ? "Sign In" : "Sign Up"}
             </Button>
             <div className="text-center text-sm text-muted-foreground">
-              {formType === 'login' ? (
-                  <>
-                  Don't have an account?{" "}
-                  <button type="button" onClick={toggleFormType} className="font-semibold text-primary hover:underline">
-                      Sign up
+              {formType === "login" ? (
+                <>
+                  Don&apos;t have an account?{" "}
+                  <button
+                    type="button"
+                    onClick={toggleFormType}
+                    className="font-semibold text-primary hover:underline"
+                  >
+                    Sign up
                   </button>
-                  </>
+                </>
               ) : (
-                  <>
+                <>
                   Already have an account?{" "}
-                  <button type="button" onClick={toggleFormType} className="font-semibold text-primary hover:underline">
-                      Sign in
+                  <button
+                    type="button"
+                    onClick={toggleFormType}
+                    className="font-semibold text-primary hover:underline"
+                  >
+                    Sign in
                   </button>
-                  </>
+                </>
               )}
             </div>
           </form>
@@ -394,9 +341,7 @@ export function LoginForm() {
             <span className="w-full border-t" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">
-              Or continue with
-            </span>
+            <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
           </div>
         </div>
         <Button

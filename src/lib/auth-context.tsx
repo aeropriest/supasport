@@ -39,19 +39,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "admin@supasport.com";
         if (firebaseUser.email === adminEmail) {
           setRole("admin");
+          setLoading(false);
         } else {
-          const coachDoc = await getDoc(doc(db, "coaches", firebaseUser.uid));
-          if (coachDoc.exists()) {
-            setRole("coach");
-          } else {
+          try {
+            const coachDoc = await getDoc(doc(db, "coaches", firebaseUser.uid));
+            console.log("Coach doc exists:", coachDoc.exists(), "for UID:", firebaseUser.uid);
+            if (coachDoc.exists()) {
+              setRole("coach");
+            } else {
+              console.warn("No coach document found for user:", firebaseUser.email);
+              setRole(null);
+            }
+          } catch (error) {
+            console.error("Error fetching coach document:", error);
             setRole(null);
           }
+          setLoading(false);
         }
       } else {
         setUser(null);
         setRole(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
     return () => unsubscribe();
   }, []);

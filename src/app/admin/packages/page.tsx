@@ -38,11 +38,11 @@ export default function PackagesPage() {
   };
 
   const lessonTypes = [
-    "Private Lesson",
-    "Group Lesson",
-    "One-on-One Lesson",
-    "Semi-Private Lesson",
-    "Custom Lesson",
+    "Private",
+    "Semi-Private Group",
+    "Custom-Private",
+    "Custom-Semi-Private",
+    "Custom Group",
   ];
 
   const openAdd = () => {

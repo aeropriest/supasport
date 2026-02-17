@@ -67,7 +67,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         }`}
       >
         <div className="flex h-16 items-center justify-between border-b px-6">
-          <h1 className="text-xl font-bold text-indigo-600">⚽ SupaSport</h1>
+          <h1 className="text-xl font-bold text-indigo-600">🎾 SupaSport</h1>
           <button className="lg:hidden" onClick={() => setSidebarOpen(false)}>
             <X className="h-5 w-5 text-gray-500" />
           </button>

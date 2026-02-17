@@ -31,11 +31,11 @@ export default function CoachDashboard() {
   });
 
   const lessonTypes = [
-    "Private Lesson",
-    "Group Lesson",
-    "One-on-One Lesson",
-    "Semi-Private Lesson",
-    "Custom Lesson",
+    "Private",
+    "Semi-Private Group",
+    "Custom-Private",
+    "Custom-Semi-Private",
+    "Custom Group",
   ];
 
   useEffect(() => {
@@ -45,18 +45,20 @@ export default function CoachDashboard() {
   const loadData = async () => {
     if (!user) return;
     try {
+      console.log("Loading coach data for UID:", user.uid);
       const [l, c, p, coach] = await Promise.all([
         getLessonsByCoach(user.uid),
         getClients(),
         getPackages(),
         getCoachById(user.uid),
       ]);
+      console.log("Loaded:", { lessons: l.length, clients: c.length, packages: p.length, coach: coach?.name });
       setLessons(l);
       setClients(c);
       setPackages(p);
       if (coach) setCoachName(coach.name);
     } catch (err) {
-      console.error(err);
+      console.error("Error loading coach data:", err);
     } finally {
       setLoading(false);
     }
@@ -135,12 +137,11 @@ export default function CoachDashboard() {
       const selectedClients = clients.filter((c) => form.clientIds.includes(c.id));
       const sessionId = `S-${Date.now().toString(36).toUpperCase()}`;
 
-      await addLesson({
+      const lessonData: any = {
         coachId: user.uid,
         coachName: coachName || user.email || "Coach",
         clientIds: form.clientIds,
         clientNames: selectedClients.map((c) => c.name),
-        packageId: form.packageId || undefined,
         lessonType: form.lessonType,
         date: selectedDate,
         time: form.time,
@@ -151,7 +152,14 @@ export default function CoachDashboard() {
         notes: form.notes,
         status: form.status,
         createdAt: new Date().toISOString(),
-      });
+      };
+      
+      // Only add packageId if it's not empty
+      if (form.packageId && form.packageId.trim() !== "") {
+        lessonData.packageId = form.packageId;
+      }
+      
+      await addLesson(lessonData);
       setShowModal(false);
       await loadData();
     } catch (err: any) {

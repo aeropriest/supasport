@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   getLessons,
   getCoaches,
@@ -12,7 +12,7 @@ import {
   markLessonCompleted,
 } from "@/lib/firestore";
 import { Lesson, Coach, Client, Package } from "@/lib/types";
-import { Plus, Trash2, X, CheckCircle } from "lucide-react";
+import { Plus, Trash2, X, CheckCircle, Calendar, List, ChevronLeft, ChevronRight } from "lucide-react";
 
 export default function LessonsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
@@ -25,6 +25,8 @@ export default function LessonsPage() {
   const [error, setError] = useState("");
   const [filterCoach, setFilterCoach] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
+  const [currentDate, setCurrentDate] = useState(new Date());
 
   const [form, setForm] = useState({
     coachId: "",
@@ -64,11 +66,11 @@ export default function LessonsPage() {
   };
 
   const lessonTypes = [
-    "Private Lesson",
-    "Group Lesson",
-    "One-on-One Lesson",
-    "Semi-Private Lesson",
-    "Custom Lesson",
+    "Private",
+    "Semi-Private Group",
+    "Custom-Private",
+    "Custom-Semi-Private",
+    "Custom Group",
   ];
 
   const openAdd = () => {
@@ -110,12 +112,11 @@ export default function LessonsPage() {
       const selectedClients = clients.filter((c) => form.clientIds.includes(c.id));
       const sessionId = `S-${Date.now().toString(36).toUpperCase()}`;
 
-      await addLesson({
+      const lessonData: any = {
         coachId: form.coachId,
         coachName: coach?.name || "",
         clientIds: form.clientIds,
         clientNames: selectedClients.map((c) => c.name),
-        packageId: form.packageId || undefined,
         lessonType: form.lessonType,
         date: form.date,
         time: form.time,
@@ -126,7 +127,14 @@ export default function LessonsPage() {
         notes: form.notes,
         status: form.status,
         createdAt: new Date().toISOString(),
-      });
+      };
+      
+      // Only add packageId if it's not empty
+      if (form.packageId && form.packageId.trim() !== "") {
+        lessonData.packageId = form.packageId;
+      }
+      
+      await addLesson(lessonData);
       setShowModal(false);
       await loadData();
     } catch (err: any) {
@@ -166,6 +174,31 @@ export default function LessonsPage() {
     (p) => p.status === "active" && form.clientIds.includes(p.clientId)
   );
 
+  // Calendar logic
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayOfWeek = new Date(year, month, 1).getDay();
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+
+  const calendarDays = useMemo(() => {
+    const days: (number | null)[] = [];
+    for (let i = 0; i < firstDayOfWeek; i++) days.push(null);
+    for (let i = 1; i <= daysInMonth; i++) days.push(i);
+    return days;
+  }, [firstDayOfWeek, daysInMonth]);
+
+  const getLessonsForDay = (day: number) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    return filteredLessons.filter((l) => l.date === dateStr);
+  };
+
+  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
+  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -187,8 +220,32 @@ export default function LessonsPage() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="mb-4 flex flex-wrap gap-3">
+      {/* View Toggle and Filters */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+          <button
+            onClick={() => setViewMode("list")}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition ${
+              viewMode === "list"
+                ? "bg-indigo-600 text-white"
+                : "bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <List className="h-4 w-4" />
+            List
+          </button>
+          <button
+            onClick={() => setViewMode("calendar")}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition ${
+              viewMode === "calendar"
+                ? "bg-indigo-600 text-white"
+                : "bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <Calendar className="h-4 w-4" />
+            Calendar
+          </button>
+        </div>
         <select
           value={filterCoach}
           onChange={(e) => setFilterCoach(e.target.value)}
@@ -213,7 +270,85 @@ export default function LessonsPage() {
         </select>
       </div>
 
-      <div className="overflow-x-auto rounded-xl bg-white shadow-sm border border-gray-100">
+      {/* Calendar View */}
+      {viewMode === "calendar" && (
+        <div className="rounded-xl bg-white p-6 shadow-sm border border-gray-100">
+          <div className="mb-4 flex items-center justify-between">
+            <button onClick={prevMonth} className="rounded-lg p-2 hover:bg-gray-100">
+              <ChevronLeft className="h-5 w-5 text-gray-600" />
+            </button>
+            <h2 className="text-lg font-semibold text-gray-800">
+              {monthNames[month]} {year}
+            </h2>
+            <button onClick={nextMonth} className="rounded-lg p-2 hover:bg-gray-100">
+              <ChevronRight className="h-5 w-5 text-gray-600" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-gray-500 mb-2">
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+              <div key={d} className="py-2">{d}</div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {calendarDays.map((day, i) => {
+              if (day === null) {
+                return <div key={`empty-${i}`} className="aspect-square" />;
+              }
+              const dayLessons = getLessonsForDay(day);
+              const isToday =
+                day === new Date().getDate() &&
+                month === new Date().getMonth() &&
+                year === new Date().getFullYear();
+
+              return (
+                <div
+                  key={day}
+                  className={`min-h-24 rounded-lg border p-2 ${
+                    isToday ? "border-indigo-500 bg-indigo-50" : "border-gray-200"
+                  }`}
+                >
+                  <div className={`text-sm font-medium ${
+                    isToday ? "text-indigo-700" : "text-gray-700"
+                  }`}>
+                    {day}
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {dayLessons.slice(0, 3).map((lesson) => (
+                      <div
+                        key={lesson.id}
+                        className={`rounded px-1.5 py-1 text-xs ${
+                          lesson.status === "completed"
+                            ? "bg-green-100 text-green-700"
+                            : lesson.status === "cancelled"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-blue-100 text-blue-700"
+                        }`}
+                      >
+                        <div className="font-medium truncate">{lesson.time}</div>
+                        <div className="truncate">{lesson.coachName}</div>
+                        <div className="truncate text-xs opacity-75">
+                          {lesson.clientNames?.join(", ")}
+                        </div>
+                      </div>
+                    ))}
+                    {dayLessons.length > 3 && (
+                      <div className="text-xs text-gray-500 text-center">
+                        +{dayLessons.length - 3} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* List View */}
+      {viewMode === "list" && (
+        <div className="overflow-x-auto rounded-xl bg-white shadow-sm border border-gray-100">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-gray-500">
@@ -281,7 +416,8 @@ export default function LessonsPage() {
             )}
           </tbody>
         </table>
-      </div>
+        </div>
+      )}
 
       {/* Add Lesson Modal */}
       {showModal && (

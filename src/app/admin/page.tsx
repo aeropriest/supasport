@@ -98,41 +98,82 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Low Balance Packages */}
-      {lowBalancePackages.length > 0 && (
-        <div className="mb-8">
-          <h2 className="mb-4 text-lg font-semibold text-gray-800">
-            ⚠️ Clients Running Low on Lessons
-          </h2>
-          <div className="overflow-x-auto rounded-xl bg-white shadow-sm border border-gray-100">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-gray-50 text-left text-gray-500">
-                  <th className="px-4 py-3 font-medium">Client</th>
-                  <th className="px-4 py-3 font-medium">Lesson Type</th>
-                  <th className="px-4 py-3 font-medium">Remaining</th>
-                  <th className="px-4 py-3 font-medium">Package Size</th>
+      {/* Client Package Overview */}
+      <div className="mb-8">
+        <h2 className="mb-4 text-lg font-semibold text-gray-800">
+          📦 Client Package Overview
+        </h2>
+        <div className="overflow-x-auto rounded-xl bg-white shadow-sm border border-gray-100">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-gray-50 text-left text-gray-500">
+                <th className="px-4 py-3 font-medium">Client</th>
+                <th className="px-4 py-3 font-medium">Lesson Type</th>
+                <th className="px-4 py-3 font-medium">Total Lessons</th>
+                <th className="px-4 py-3 font-medium">Used</th>
+                <th className="px-4 py-3 font-medium">Remaining</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {packages.length > 0 ? (
+                packages.map((pkg) => {
+                  const used = pkg.packageSize - pkg.packageBalance;
+                  return (
+                    <tr key={pkg.id} className="border-b last:border-0">
+                      <td className="px-4 py-3 font-medium text-gray-800">{pkg.clientName}</td>
+                      <td className="px-4 py-3 text-gray-600">{pkg.lessonType}</td>
+                      <td className="px-4 py-3 text-gray-600">{pkg.packageSize}</td>
+                      <td className="px-4 py-3 text-gray-600">{used}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          pkg.packageBalance === 0
+                            ? "bg-red-100 text-red-700"
+                            : pkg.packageBalance <= 2
+                            ? "bg-yellow-100 text-yellow-700"
+                            : "bg-green-100 text-green-700"
+                        }`}>
+                          {pkg.packageBalance}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          pkg.status === "active"
+                            ? "bg-green-100 text-green-700"
+                            : pkg.status === "completed"
+                            ? "bg-gray-100 text-gray-700"
+                            : "bg-red-100 text-red-700"
+                        }`}>
+                          {pkg.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                    No packages yet. Create packages for your clients!
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {lowBalancePackages.map((pkg) => (
-                  <tr key={pkg.id} className="border-b last:border-0">
-                    <td className="px-4 py-3 font-medium text-gray-800">{pkg.clientName}</td>
-                    <td className="px-4 py-3 text-gray-600">{pkg.lessonType}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        pkg.packageBalance === 0
-                          ? "bg-red-100 text-red-700"
-                          : "bg-yellow-100 text-yellow-700"
-                      }`}>
-                        {pkg.packageBalance} left
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{pkg.packageSize}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Low Balance Alert */}
+      {lowBalancePackages.length > 0 && (
+        <div className="mb-8 rounded-xl bg-yellow-50 border border-yellow-200 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-yellow-900">Action Required</h3>
+              <p className="text-sm text-yellow-800 mt-1">
+                {lowBalancePackages.length} client{lowBalancePackages.length > 1 ? 's have' : ' has'} 2 or fewer lessons remaining. 
+                Contact them to renew their packages.
+              </p>
+            </div>
           </div>
         </div>
       )}

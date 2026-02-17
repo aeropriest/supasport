@@ -9,7 +9,10 @@ A comprehensive Next.js application for managing sports lessons, coaches, client
 - **Coaches Management**: Add, edit, and delete coaches with automatic Firebase Auth account creation
 - **Clients Management**: Manage client information (name, email, phone)
 - **Packages Management**: Create lesson packages for clients with pricing and tracking
-- **Lessons Management**: View all lessons with filtering by coach and status
+- **Lessons Management**: 
+  - **List View**: Table view with filtering by coach and status
+  - **Calendar View**: Monthly calendar showing lessons with coach and client names
+  - Toggle between views with one click
 - **Reports**: 
   - Monthly revenue breakdown by lesson type
   - Coach performance metrics
@@ -46,9 +49,27 @@ The Firebase configuration is already set in `.env.local`:
 - Project: `supasport`
 - All credentials are pre-configured
 
-### 3. Create Admin Account
+### 3. **IMPORTANT: Deploy Firestore Security Rules**
 
-Before running the app, you need to create the admin account in Firebase:
+To fix permission errors, you MUST deploy the security rules:
+
+```bash
+# Install Firebase CLI (if not already installed)
+npm install -g firebase-tools
+
+# Login to Firebase
+firebase login
+
+# Initialize Firestore (select existing project: supasport)
+firebase init firestore
+
+# Deploy the rules
+firebase deploy --only firestore:rules
+```
+
+### 4. Create Admin Account
+
+Before running the app, create the admin account in Firebase:
 
 1. Go to [Firebase Console](https://console.firebase.google.com/)
 2. Select the `supasport` project
@@ -58,13 +79,15 @@ Before running the app, you need to create the admin account in Firebase:
    - **Email**: `admin@supasport.com`
    - **Password**: `SupaSport2024!` (or your preferred password)
 
-### 4. Run Development Server
+### 5. Run Development Server
 
 ```bash
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+**Note**: Login page is pre-filled with admin credentials for easy testing.
 
 ## Default Credentials
 
@@ -116,13 +139,16 @@ Coaches are created by the admin through the dashboard. The admin sets a tempora
 - **packages**: Lesson packages with balance tracking
 - **lessons**: Individual lesson records
 
-### Lesson Types
+### Package/Lesson Types
 
-- Private Lesson
-- Group Lesson
-- One-on-One Lesson
-- Semi-Private Lesson
-- Custom Lesson
+The system supports the following package types:
+- **Private**: One-on-one private lessons
+- **Semi-Private Group**: Small group lessons
+- **Custom-Private**: Customized private lesson packages
+- **Custom-Semi-Private**: Customized semi-private packages
+- **Custom Group**: Customized group lesson packages
+
+These types are used consistently across packages, lessons, and reports.
 
 ## Key Features Explained
 
